@@ -3,7 +3,7 @@ import json
 import copy
 from PIL import Image
 
-from readers.pdfreader.pdformer.util.util import *
+from .util import *
 from input.config.conf import *
 
 class SortGrouper():

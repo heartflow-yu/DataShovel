@@ -21,7 +21,7 @@ from input.config.conf import *
 
 
 class Pdformer():
-    def __init__(self, ):
+    def __init__(self,):
         self.pdf_file = pdf_file  #  "test_files/papers/con5/weak.pdf"
 
         self.output_dir = output_directory
@@ -43,8 +43,8 @@ class Pdformer():
             # setattr(self, f"{folder_type}_solver", globals()[f"{folder_type.capitalize()}Solver"]())
 
         self.solvers = {
-            "text": TextSolver(),
             "title": TitleSolver(),
+            "text": TextSolver(),
             "list": ListSolver(),
             "table": TableSolver(),
             "figure": FigureSolver()
@@ -66,8 +66,6 @@ class Pdformer():
         self.alayout2 = None
         self.alayout3 = None
 
-        
-
 
     def generate_pics(self):
         if not os.path.exists(self.pics_dir):
@@ -85,9 +83,12 @@ class Pdformer():
 
     def generate_structured_pics(self):
         print("############################")
-        if os.path.exists(self.structure_dir):
-            print("Structure already generated")
-            return
+        # #TODO
+        # if os.path.exists(self.structure_dir):
+        #     print("Structure already generated")
+        #     return
+        if not os.path.exists(self.structure_dir):
+            os.makedirs(self.structure_dir)
         command = ["python", INFER_PATH,
                 "--model_dir=" + LCNET_PATH,
                 "--image_dir=" + self.pics_dir,
@@ -124,8 +125,11 @@ class Pdformer():
             return page_text_boxes, page_img_boxes
 
     def generate_test_boxes(self):
-        page_text_boxes, page_img_boxes = self.extract_box_from_pdf(self)
+        if not os.path.exists(self.temp_dir):
+            os.makedirs(self.temp_dir)
+        page_text_boxes, page_img_boxes = self.extract_box_from_pdf()
         self.text_boxes_from_miner = page_text_boxes
+
         with open(os.path.join(self.temp_dir, 'text_boxes.json'), 'w') as f:
             json.dump(page_text_boxes, f)
 
@@ -150,9 +154,9 @@ class Pdformer():
                     y.append(x_max)
                     y.append(y_max)
 
-                    if (box["category_id"] in category_id2name):
-                        y.append(category_id2name[box["category_id"]])
-                    if (box["category_id"]!=1):
+                    if (box["category_id"] in category_id2name_bbox):
+                        y.append(category_id2name_bbox[box["category_id"]])
+                    if (box["category_id"]!=1): #layout中不加入title
                         bboxes.setdefault(str(i), []).append(y)  #####不可忘记str化！！否则在txt中看不出来！！！！
 
         self.bboxes = bboxes
@@ -165,7 +169,7 @@ class Pdformer():
         print("isolated_formula start")
         new_bboxes=copy.deepcopy(self.bboxes)
         pages = os.listdir(self.pics_dir)
-        p2t = Pix2Text(analyzer_config=dict(model_name='mfd'), device='gpu')
+        p2t = Pix2Text(analyzer_config=dict(model_name='mfd'), device='cpu')
         for i,page in enumerate(pages):
             img_fp = os.path.join(self.pics_dir, pages[i])
             outs = p2t(img_fp, resized_shape=600)
@@ -185,8 +189,9 @@ class Pdformer():
         self.new_bboxes = new_bboxes
 
     def Pix2Text_ocr(self):
+        #TODO 跳过table list 等
         pages = os.listdir(self.pics_dir)
-        p2t = Pix2Text(analyzer_config=dict(model_name='mfd'), device='gpu')
+        p2t = Pix2Text(analyzer_config=dict(model_name='mfd'), device='cpu')
         all_image = [Image.open(os.path.join(self.pics_dir, pages[i])) for i in range(len(pages))]
         for i, box in tqdm(enumerate(pages)): ##某一页
             for fsection in self.final_layout2[str(i)]:
@@ -202,7 +207,8 @@ class Pdformer():
                     only_text = merge_line_texts(outs, auto_line_break=True)
                     ffbox.append(only_text)
                     
-        #TODO final_layout2
+        #TODO final_layout2 去掉页码
+        #TODO 处理多行问题
         with open(os.path.join(self.temp_dir, 'final_layout2.json'), "w") as file:
             json.dump(self.final_layout2, file, indent=2)
         
@@ -215,20 +221,6 @@ class Pdformer():
         Returns:
             node_list: all the nodes in sequence 
         """
-        # text_id = 0
-        # text_entries = []
-        # title_id = 0
-        # title_entries = []
-        # list_id = 0
-        # list_entries = []
-        # table_id = 0
-        # table_entries = []
-        # figure_id = 0
-        # figure_entries = []
-        # for category in categories:
-        #     exec(f"{category}_id = 0")
-        #     exec(f"{category}_entries = []")
-
         node_list = []
         for i, title_content_pairs in dirtydict.items():  
             for title_content in title_content_pairs:          
@@ -238,15 +230,10 @@ class Pdformer():
                     category = "title"
                     solver = self.solvers[category]
                     current_id = getattr(self, f"{category}_id")
-                    node_list.append(solver.get_newnode(current_id))
+                    node_list.append(solver.get_newnode(current_id,title_text))
                     current_entries = getattr(self, f"{category}_entries")
                     current_entries.append(solver.get_newentry(current_id, i, title_content[0][:4], title_text))
                     setattr(self, f"{category}_id", current_id + 1)
-                    # new_entry = [title_id, i, title_content[0][:4], title_text]
-                    # title_entries.append(new_entry)
-                    # new_node = {"nodetype": 1, "id": title_id, "children": []}
-                    # node_list.append(new_node)
-                    # title_id += 1
                 
                 for box in title_content[1]:
                     category = box[4]
@@ -255,32 +242,10 @@ class Pdformer():
                         current_id = getattr(self, f"{category}_id")
                         node_list.append(solver.get_newnode(current_id))
                         current_entries = getattr(self, f"{category}_entries")
-                        current_entries.append(solver.get_newentry(current_id, i, box[:4], box[5]))
+                        text = box[6].replace("\n", "\\n") # avoid the '/n' occupying multiple lines in csv
+                        current_entries.append(solver.get_newentry(current_id, i, box[:4], text))
                         setattr(self, f"{category}_id", current_id + 1)
-                # if (box[4] == "text"):
-                #     new_entry = [text_id, i, box[:4], box[5]]
-                #     text_entries.append(new_entry)
-                #     new_node = {"nodetype": 0, "id": text_id, "children": []}
-                #     node_list.append(new_node)
-                #     text_id += 1
-                # elif (box[4] == "list"):
-                #     new_entry = [list_id, i, box[:4], box[5]]
-                #     list_entries.append(new_entry)
-                #     new_node = {"nodetype": 2, "id": list_id, "children": []}
-                #     node_list.append(new_node)
-                #     list_id += 1
-                # elif (box[4] == "table"):
-                #     new_entry = [table_id, i, box[:4], box[5]]
-                #     table_entries.append(new_entry)
-                #     new_node = {"nodetype": 3, "id": table_id, "children": []}
-                #     node_list.append(new_node)
-                #     table_id += 1
-                # elif (box[4] == "figure"):
-                #     new_entry = [figure_id, i, box[:4], box[5]]
-                #     figure_entries.append(new_entry)
-                #     new_node = {"nodetype": 4, "id": figure_id, "children": []}
-                #     node_list.append(new_node)
-                #     figure_id += 1
+
         for category in categories:
             current_entries = getattr(self, f"{category}_entries")
             columns = self.solvers[category].get_columns()
@@ -289,69 +254,46 @@ class Pdformer():
                 writer.writerow(columns)
                 for entry in current_entries:
                     writer.writerow(entry)
-        # columns = ["id", "page", "position", "text"]
-        # with open(os.path.join(self.text_folder, 'meta_text.csv'), 'w') as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(columns)
-
-        #     for entry in text_entries:
-        #         writer.writerow(entry)
-        # with open(os.path.join(self.title_folder, 'meta_title.csv'), 'w') as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(columns)
-
-        #     for entry in title_entries:
-        #         writer.writerow(entry)
-        # with open(os.path.join(self.list_folder, 'meta_list.csv'), 'w') as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(columns)
-
-        #     for entry in list_entries:
-        #         writer.writerow(entry)
-        # with open(os.path.join(self.table_folder, 'meta_table.csv'), 'w') as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(columns)
-
-        #     for entry in table_entries:
-        #         writer.writerow(entry)
-        # with open(os.path.join(self.figure_folder, 'meta_figure.csv'), 'w') as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(columns)
-
-        #     for entry in figure_entries:
-        #         writer.writerow(entry)
         
+        with open(os.path.join(self.temp_dir, 'node_list.json'), "w") as f:
+            json.dump(node_list, f, indent=2)
         return node_list
 
     def clean_title_level(self, all_nodes):
         for node in all_nodes:
-            if node['node_type'] == 1:  # 标题  
+            if node['node_type'] == 0:  # 标题  
                 title_words = node['text'].split(" ")
 
-            first_word = ""   
-            for i in title_words:
-                if i != "":
-                    first_word = i
-                    break    # 4.1   (1)   Abstract
+                first_word = ""   
+                for i in title_words:
+                    if i != "":
+                        first_word = i
+                        break    # 4.1   (1)   Abstract
 
-            nums = first_word.split(".")   
-            is_num = True
-            for i in nums:# 4 1   (
-                if not i.isdigit():   
-                    is_num = False  #abstract  （1）？
+                nums = first_word.split(".")   
+                is_num = True
+                for i in nums:# 4 1   (
+                    if not i.isdigit():   
+                        is_num = False  #abstract  （1）？
 
-            if is_num:
-                node['level'] = len(nums) + 1  ########数字个数加1为级别             
+                if is_num:
+                    #TODO 改级别？
+                    # node['level'] = len(nums) + 1  ########数字个数加1为级别 
+                    node['level'] = len(nums)   ###########数字个数为级别 1级开始   
+
+        with open(os.path.join(self.temp_dir, 'all_nodes.json'), "w") as f:
+            json.dump(all_nodes, f, indent=2)        
+                   
         return all_nodes
 
     def build_tree(self, root_node, nodes, start_idx, current_level): #递归建树
         idx = start_idx
         while idx < len(nodes):
             node = nodes[idx]
-            if node['node_type'] == 1:  # paragraph
+            if node['node_type'] >0:  # not title
                 root_node['children'].append(node)
                 idx += 1
-            else:
+            else:# title
                 if node['level'] <= current_level:  # 遇高级/同级标题 递归结束 
                     break
                 else:
@@ -361,113 +303,16 @@ class Pdformer():
         return root_node, idx
 
     def organize_tokens(self,nodes):
-        root = nodes[0]
-        root_tree, _ = self.build_tree(root, nodes, 1, 1) #从大标题开始
-        return root_tree
+        end_idx = 0
+        root_titles = []
 
-    # def check_overlap(self, boxa, boxb, threshold = 0.8):
-    #     """
-    #     检查两个框之间的重叠部分是否超过指定的阈值
-    #     """
-    #     left_a, top_a, right_a, bottom_a = boxa
-    #     left_b, top_b, right_b, bottom_b = boxb
-    #     overlap_left = max(left_a, left_b)
-    #     overlap_top = max(top_a, top_b)
-    #     overlap_right = min(right_a, right_b)
-    #     overlap_bottom = min(bottom_a, bottom_b)
-        
-    #     overlap_width = max(0, overlap_right - overlap_left)
-    #     overlap_height = max(0, overlap_bottom - overlap_top)
-        
-    #     overlap_area = overlap_width * overlap_height
-    #     boxb_area = (right_b - left_b) * (bottom_b - top_b)
-    #     overlap_ratio = overlap_area / boxb_area
-
-    #     return overlap_ratio > threshold
-
-    # def Layout2Text(self):
-    #     print("####################")
-    #     print("Layout2Text start")
-    #     if self.text_boxes_from_miner is None:
-    #         with open(os.path.join(self.output_dir, 'text_boxes.json'), 'r') as f:
-    #             temp_miner = json.load(f)
-    #         for key, value in temp_miner.items():
-    #             self.text_boxes_from_miner[int(key)] = value
-
-    #     pages = os.listdir(self.pics_dir)
-    #     print(pages)
-    #     page2box2text = [{(box[2]*200/72, 2200-box[5]*200/72, box[4]*200/72, 2200-box[3]*200/72):box[1] for box in self.text_boxes_from_miner[i]} for i in range(len(pages))]
-    #     for i, box in tqdm(enumerate(pages)): ##某一页
-    #         ###############
-    #         # img_fp = os.path.join(self.pics_folder, pages[i])
-    #         # image = Image.open(img_fp)
-    #         # draw = ImageDraw.Draw(image)
-    #         # for bbox in box2text:
-    #         #     draw.rectangle([bbox[0], bbox[1], bbox[2], bbox[3]], outline="red", width=2)
-    #         ###############
-    #         for idx_fsection, fsection in enumerate(self.final_layout2[str(i)]):
-    #             for idx_ffbox, ffbox in enumerate(fsection[1]):
-    #                 left, top, right, bottom = ffbox[:4]
-    #                 ###############
-    #                 # draw.rectangle([left, top, right, bottom], outline="blue", width=2)
-    #                 # draw.text((left, top), str(idx_fsection) + ", "+ str(idx_ffbox), fill="black")
-    #                 ###############
-    #                 ybox = (left, top, right, bottom)
-    #                 only_text = ""
-    #                 box2text = page2box2text[ffbox[5]]
-    #                 for box in box2text:
-    #                     if self.check_overlap(ybox, box):
-    #                         only_text += box2text[box]
-    #                         only_text += "\n"
-    #                 ffbox.append(only_text)
-    #         ###############
-    #         # image.save(f"output/pics_miner/boxed_image_{i}.png")
-    #         ###############
-
-    #     with open(os.path.join(self.temp_dir, 'final_layout2.json'), "w") as file:
-    #         json.dump(self.final_layout2, file, indent=2)
-
-    # def supplement_title(self):
-    #     with open(os.path.join(self.temp_dir, 'final_layout2.json'), "r") as file:
-    #         json_data = file.read()
-    #     self.final_layout2 = json.loads(json_data)
-    #     alayout = {}
-    #     temp_title = {}
-    #     temp_title["0"] = ""
-    #     temp_title["1"] = ""
-    #     temp_title["2"] = ""
-    #     temp_title["3"] = ""
-    #     temp_title["4"] = ""
-    #     ##4 更新了 但4.1没更新 导致错位3.4
-    #     # titleset = []
-    #     # for i, box in enumerate(pages): ##某一页
-    #     #     for titlef in final_layout2[str(i)]:
-    #     #         ptitle = titlef[0][4]
-    #     #         titleset.append(ptitle)
-    #     pages = os.listdir(self.pics_dir)
-    #     for i, box in enumerate(pages): ##某一页
-    #         for titlef in self.final_layout2[str(i)]:
-    #             ptitle = titlef[0][4]
-    #             title_level = get_title_level(ptitle)
-    #             if (title_level==0):
-    #                 temp_title[str(title_level)] = ptitle
-    #                 alayout[ptitle]= {}
-    #                 for pbox in titlef[1]:
-    #                     alayout[ptitle].setdefault("content", []).append(pbox)
-    #             else:
-    #                 if temp_title[str(title_level-1)] != "":
-    #                     temp_title[str(title_level)] = ptitle
-    #                     parentl = alayout
-    #                     for t in range(title_level):  ###找到上一级 导致错位
-    #                         if temp_title[str(t)] in parentl:
-    #                             parentl = parentl[temp_title[str(t)]]
-    #                     parentl[ptitle]= {}
-    #                     for pbox in titlef[1]:
-    #                         parentl[ptitle].setdefault("content", []).append(pbox)
-
-    #     self.alayout = alayout
-    #     with open(os.path.join(self.temp_dir, 'alayout.json'), "w") as file:
-    #         json.dump(alayout, file, indent=2)
+        #TODO from the root node
+        while True:
+            root_tree, end_idx = self.build_tree(nodes[end_idx], nodes, end_idx+1, 1) 
+            root_titles.append(root_tree)
+            if end_idx == len(nodes):
+                break
+        return root_titles
 
     def pdf2json(self):
         self.generate_pics()
@@ -484,22 +329,21 @@ class Pdformer():
         self.isolated_formula()
         # layout_bbox2.json
 
-        SortGrouper(self.textbox_file, self.new_bboxes,self.layout).sort_and_group()
+        SortGrouper(self.textbox_file, self.new_bboxes,self.layout).sort_and_group(self)
         # self.sort_boxes()  layout_title2.json
         # self.possible_section()  final_layout.json
         # self.sort_boxes2()  final_layout2.json
-        
+        #TODO: postion 拆
         self.Pix2Text_ocr()
-        #TODO: VMware ssh连
         all_nodes = self.list2node_csv(self.final_layout2)
         all_nodes = self.clean_title_level(all_nodes)
-        root_tree = self.organize_tokens(all_nodes)
+        root_titles = self.organize_tokens(all_nodes)
         # self.Layout2Text()
 
-        # self.supplement_title()
-        # alayout.json
+        # self.supplement_title()  alayout.json
         
         # JsonSolver(self.output_dir, self.temp_folder).get_json(self)
         # self.tranform_json()
         # self.split_json()
-        return root_tree
+        #TODO: requirements >=
+        return root_titles
