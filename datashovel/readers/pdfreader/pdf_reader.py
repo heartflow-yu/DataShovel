@@ -14,5 +14,16 @@ class PdfReader():
         with open(self.result_file, "w") as f:
             json.dump(root_titles, f, indent=2)
 
-    #TODO: load
+    def load(self):
+        '''
+        load the result from folder
+        '''
+        if not os.path.exists(self.result_file):
+            print("No result_file found! It hasn't been generated yet.")
+
+        with open(self.result_file, "r") as f:
+            root_titles = json.load(f)
+        return root_titles
+
+
     #TODO: 各种 expert ocr
