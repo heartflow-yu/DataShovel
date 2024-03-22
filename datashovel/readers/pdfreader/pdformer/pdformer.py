@@ -189,14 +189,14 @@ class Pdformer():
         self.new_bboxes = new_bboxes
 
     def Pix2Text_ocr(self):
-        #TODO 跳过table list 等
         pages = os.listdir(self.pics_dir)
         p2t = Pix2Text(analyzer_config=dict(model_name='mfd'), device='cpu')
         all_image = [Image.open(os.path.join(self.pics_dir, pages[i])) for i in range(len(pages))]
         for i, box in tqdm(enumerate(pages)): ##某一页
             for fsection in self.final_layout2[str(i)]:
                 for ffbox in fsection[1]:
-                    #
+                    # 其他不ocr
+                    # if ffbox[4] == "text":
                     left, top, right, bottom = ffbox[:4]
                     ybox = (left, top, right, bottom)
                     cropped_img = all_image[ffbox[5]].crop(ybox)
@@ -222,6 +222,9 @@ class Pdformer():
             node_list: all the nodes in sequence; csv file and cropped images
         """
         node_list = []
+        pages = os.listdir(self.pics_dir)
+        all_image = [Image.open(os.path.join(self.pics_dir, pages[i])) for i in range(len(pages))]
+
         for i, title_content_pairs in dirtydict.items():  
             for title_content in title_content_pairs:          
                 samebox_tile_num = len(title_content[0]) - 4
@@ -243,12 +246,17 @@ class Pdformer():
                         node_list.append(solver.get_newnode(current_id))
                         current_entries = getattr(self, f"{category}_entries")
                         #TODO: 6????
-
                         text = box[6].replace("\n", "\\n") # avoid the '/n' occupying multiple lines in csv
                         current_entries.append(solver.get_newentry(current_id, i, box[:4], text))
-                        # cropped_img = all_image[ffbox[5]].crop(ybox)
                         setattr(self, f"{category}_id", current_id + 1)
 
+                        #save the cropped image
+                        if category != "text":
+                            left, top, right, bottom = box[:4]
+                            ybox = (left, top, right, bottom)
+                            cropped_img = all_image[int(i)].crop(ybox)
+                            solver.save_cropped_image(cropped_img, current_id)
+                            
         for category in categories:
             current_entries = getattr(self, f"{category}_entries")
             columns = self.solvers[category].get_columns()

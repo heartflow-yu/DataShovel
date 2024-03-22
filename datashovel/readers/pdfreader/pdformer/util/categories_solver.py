@@ -1,6 +1,7 @@
 import os
 import json
 import copy
+from input.config.conf import *
 
 class TitleSolver():
     def __init__(self):
@@ -67,6 +68,12 @@ class ListSolver():
         """
         columns = ["id", "page", "position", "text"]
         return columns
+    
+    def save_cropped_image(self, image, id):
+        name = "list_" + str(id) + ".png"
+        save_path = os.path.join(results_directory, 'list', name)
+        image.save(save_path)
+
         
 class TableSolver():
     def __init__(self):
@@ -89,6 +96,11 @@ class TableSolver():
         """
         columns = ["id", "page", "position", "text"]
         return columns
+    
+    def save_cropped_image(self, image, id):
+        name = "table_" + str(id) + ".png"
+        save_path = os.path.join(results_directory, 'table', name)
+        image.save(save_path)
 
 class FigureSolver():
     def __init__(self):
@@ -111,3 +123,8 @@ class FigureSolver():
         """
         columns = ["id", "page", "position", "text"]
         return columns
+    
+    def save_cropped_image(self, image, id):
+        name = "figure_" + str(id) + ".png"
+        save_path = os.path.join(results_directory, 'figure', name)
+        image.save(save_path)
