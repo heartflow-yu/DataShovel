@@ -196,6 +196,7 @@ class Pdformer():
         for i, box in tqdm(enumerate(pages)): ##某一页
             for fsection in self.final_layout2[str(i)]:
                 for ffbox in fsection[1]:
+                    #
                     left, top, right, bottom = ffbox[:4]
                     ybox = (left, top, right, bottom)
                     cropped_img = all_image[ffbox[5]].crop(ybox)
@@ -208,7 +209,6 @@ class Pdformer():
                     ffbox.append(only_text)
                     
         #TODO final_layout2 去掉页码
-        #TODO 处理多行问题
         with open(os.path.join(self.temp_dir, 'final_layout2.json'), "w") as file:
             json.dump(self.final_layout2, file, indent=2)
         
@@ -219,7 +219,7 @@ class Pdformer():
             dirtydict: 一个形似final_layout2的dict
 
         Returns:
-            node_list: all the nodes in sequence 
+            node_list: all the nodes in sequence; csv file and cropped images
         """
         node_list = []
         for i, title_content_pairs in dirtydict.items():  
@@ -242,8 +242,11 @@ class Pdformer():
                         current_id = getattr(self, f"{category}_id")
                         node_list.append(solver.get_newnode(current_id))
                         current_entries = getattr(self, f"{category}_entries")
+                        #TODO: 6????
+
                         text = box[6].replace("\n", "\\n") # avoid the '/n' occupying multiple lines in csv
                         current_entries.append(solver.get_newentry(current_id, i, box[:4], text))
+                        # cropped_img = all_image[ffbox[5]].crop(ybox)
                         setattr(self, f"{category}_id", current_id + 1)
 
         for category in categories:
@@ -303,16 +306,18 @@ class Pdformer():
         return root_node, idx
 
     def organize_tokens(self,nodes):
-        end_idx = 0
-        root_titles = []
+        # end_idx = 0
+        # root_titles = []
 
-        #TODO from the root node
-        while True:
-            root_tree, end_idx = self.build_tree(nodes[end_idx], nodes, end_idx+1, 1) 
-            root_titles.append(root_tree)
-            if end_idx == len(nodes):
-                break
-        return root_titles
+        # while True:
+        #     root_tree, end_idx = self.build_tree(nodes[end_idx], nodes, end_idx+1, 1) 
+        #     root_titles.append(root_tree)
+        #     if end_idx == len(nodes):
+        #         break
+        root_node = {'node_type': 0, 'level':0, 'text': pdf_name, 'children': []}
+        nodes.insert(0, root_node)
+        root_tree, _ = self.build_tree(root_node, nodes, 1, 0)
+        return root_tree
 
     def pdf2json(self):
         self.generate_pics()
@@ -333,7 +338,6 @@ class Pdformer():
         # self.sort_boxes()  layout_title2.json
         # self.possible_section()  final_layout.json
         # self.sort_boxes2()  final_layout2.json
-        #TODO: postion 拆
         self.Pix2Text_ocr()
         all_nodes = self.list2node_csv(self.final_layout2)
         all_nodes = self.clean_title_level(all_nodes)
