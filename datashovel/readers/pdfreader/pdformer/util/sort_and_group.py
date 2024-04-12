@@ -182,7 +182,8 @@ class SortGrouper():
         final_layout = {}
         left_boxes = {}
         pages = os.listdir(self.pics_dir)
-        for i, page in enumerate(pages):
+        sorted_pages = sorted(pages, key=lambda x: int(re.search(r'\d+', x).group()))
+        for i, page in enumerate(sorted_pages):
             box_choosefrom = self.new_bboxes[str(i)]
             titles = self.new_layout[str(i)]
             final_layout.setdefault(str(i), [])
@@ -220,12 +221,13 @@ class SortGrouper():
         final_layout2 = {}
         final_layout2 = copy.deepcopy(final_layout)
         pages = os.listdir(self.pics_dir)
+        sorted_pages = sorted(pages, key=lambda x: int(re.search(r'\d+', x).group()))
         pnum = len(pages)
-        for i, box in enumerate(pages): ##某一页
+        for i, box in enumerate(sorted_pages): ##某一页
             for x, fsection in enumerate(final_layout[str(i)]):
                 final_layout2[str(i)][x][1] = self.sort_and_group_boxes2(fsection[1])
             if (i+1)<pnum :
-                img_fp = os.path.join(self.pics_dir, pages[i+1])
+                img_fp = os.path.join(self.pics_dir, sorted_pages[i+1])
                 #字典的键为当前页面的索引"i"，值为标题信息列表。
                 image = Image.open(img_fp)
                 pic_width = image.size[0]

@@ -140,7 +140,8 @@ class Pdformer():
         with open(os.path.join(self.structure_dir, "bbox.json"), "r") as f:
                     sbbox = json.load(f)
         pages = os.listdir(self.pics_dir)
-        for i,page in enumerate(pages):
+        sorted_pages = sorted(pages, key=lambda x: int(re.search(r'\d+', x).group()))
+        for i,page in enumerate(sorted_pages):
             for box in sbbox:
                 pageNum = box["file_name"]
                 if (pageNum == page):
@@ -169,9 +170,10 @@ class Pdformer():
         print("isolated_formula start")
         new_bboxes=copy.deepcopy(self.bboxes)
         pages = os.listdir(self.pics_dir)
+        sorted_pages = sorted(pages, key=lambda x: int(re.search(r'\d+', x).group()))
         p2t = Pix2Text(analyzer_config=dict(model_name='mfd'), device='cpu')
-        for i,page in enumerate(pages):
-            img_fp = os.path.join(self.pics_dir, pages[i])
+        for i,page in enumerate(sorted_pages):
+            img_fp = os.path.join(self.pics_dir, page)
             outs = p2t(img_fp, resized_shape=600)
         #####out的格式：左上角起顺时针 y为到图片上方的距离
         #####铭记：除了text_boxes y都为到图片上方的距离！！！！！！！！！
@@ -190,15 +192,17 @@ class Pdformer():
 
     def Pix2Text_ocr(self):
         pages = os.listdir(self.pics_dir)
+        sorted_pages = sorted(pages, key=lambda x: int(re.search(r'\d+', x).group()))
         p2t = Pix2Text(analyzer_config=dict(model_name='mfd'), device='cpu')
-        all_image = [Image.open(os.path.join(self.pics_dir, pages[i])) for i in range(len(pages))]
-        for i, box in tqdm(enumerate(pages)): ##某一页
+        all_image = [Image.open(os.path.join(self.pics_dir, sorted_pages[i])) for i in range(len(pages))]
+        for i, box in tqdm(enumerate(sorted_pages)): ##某一页
             for fsection in self.final_layout2[str(i)]:
                 for ffbox in fsection[1]:
                     # 其他不ocr
                     # if ffbox[4] == "text":
                     left, top, right, bottom = ffbox[:4]
                     ybox = (left, top, right, bottom)
+                    #TODO: bad position
                     cropped_img = all_image[ffbox[5]].crop(ybox)
                     try:
                         outs = p2t(cropped_img, resized_shape=600)
@@ -223,7 +227,8 @@ class Pdformer():
         """
         node_list = []
         pages = os.listdir(self.pics_dir)
-        all_image = [Image.open(os.path.join(self.pics_dir, pages[i])) for i in range(len(pages))]
+        sorted_pages = sorted(pages, key=lambda x: int(re.search(r'\d+', x).group()))
+        all_image = [Image.open(os.path.join(self.pics_dir, sorted_pages[k])) for k in range(len(pages))]
 
         for i, title_content_pairs in dirtydict.items():  
             for title_content in title_content_pairs:          
@@ -240,6 +245,7 @@ class Pdformer():
                 
                 for box in title_content[1]:
                     category = box[4]
+                    page_num = box[5]
                     if category in self.solvers:
                         solver = self.solvers[category]
                         current_id = getattr(self, f"{category}_id")
@@ -247,14 +253,16 @@ class Pdformer():
                         current_entries = getattr(self, f"{category}_entries")
                         #TODO: 6????
                         text = box[6].replace("\n", "\\n") # avoid the '/n' occupying multiple lines in csv
-                        current_entries.append(solver.get_newentry(current_id, i, box[:4], text))
+                        current_entries.append(solver.get_newentry(current_id, page_num, box[:4], text))
                         setattr(self, f"{category}_id", current_id + 1)
 
                         #save the cropped image
                         if category != "text":
+                            # with open (os.path.join(self.temp_dir, 'logging.txt'), "r") as f:
+                            #     f.write(f"category: {category}, page: {pages[int(i)]}, box: {box}\n")
                             left, top, right, bottom = box[:4]
                             ybox = (left, top, right, bottom)
-                            cropped_img = all_image[int(i)].crop(ybox)
+                            cropped_img = all_image[page_num].crop(ybox)
                             solver.save_cropped_image(cropped_img, current_id)
                             
         for category in categories:
